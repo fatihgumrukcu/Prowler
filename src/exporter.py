@@ -1,10 +1,10 @@
 import os
 import pandas as pd
 
-DEFAULT_PATH = "data/output/kazimalic_products.csv"
 
-
-def export_to_csv(products, output_path=DEFAULT_PATH):
+def export_to_csv(products, output_path):
+    if not output_path:
+        raise ValueError("output_path is required")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     df = pd.DataFrame(products, columns=[
         "product_name",
