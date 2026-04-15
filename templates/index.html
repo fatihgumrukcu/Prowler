@@ -78,6 +78,20 @@
     }
     nav .badge-total strong { color: var(--text); }
 
+    /* ── SITE SELECTOR ── */
+    #site-select {
+      background: var(--surface2);
+      border: 1px solid var(--accent);
+      color: var(--text);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+    }
+    #site-select option { background: var(--surface); }
+
     /* ── STATUS PILL ── */
     #status-pill {
       display: flex;
@@ -301,6 +315,63 @@
       color: #fff;
     }
 
+    /* ── TRACK BADGES ── */
+    .card-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .tag {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+    .tag-new {
+      background: rgba(16,185,129,0.15);
+      color: var(--green);
+      border: 1px solid rgba(16,185,129,0.35);
+    }
+    .tag-price {
+      background: rgba(245,158,11,0.15);
+      color: var(--yellow);
+      border: 1px solid rgba(245,158,11,0.35);
+    }
+    .old-price {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--muted);
+      text-decoration: line-through;
+      margin-left: 6px;
+    }
+
+    /* ── FILTER BUTTONS ── */
+    .filter-btns {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .filter-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.18s, border-color 0.18s, color 0.18s;
+      white-space: nowrap;
+    }
+    .filter-btn:hover { border-color: var(--accent); color: var(--text); }
+    .filter-btn.active {
+      background: rgba(99,102,241,0.18);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
     /* ── TOAST ── */
     #toast {
       position: fixed;
@@ -334,6 +405,10 @@
     Prowler Dashboard
   </div>
   <div class="nav-right">
+    <select id="site-select" onchange="switchSite(this.value)">
+      <option value="kazimalic" {% if current_site == 'kazimalic' %}selected{% endif %}>Kazimalic</option>
+      <option value="istockina" {% if current_site == 'istockina' %}selected{% endif %}>Istockina</option>
+    </select>
     <div id="status-pill" class="s-{{ scraper_status }}">
       <span class="status-dot"></span>
       <span id="status-label">{{ scraper_status }}</span>
@@ -354,6 +429,11 @@
         <option value="{{ cat }}">{{ cat }}</option>
       {% endfor %}
     </select>
+    <div class="filter-btns">
+      <button class="filter-btn active" data-tag="" onclick="setTagFilter(this, '')">Tümü</button>
+      <button class="filter-btn" data-tag="new" onclick="setTagFilter(this, 'new')">🟢 Yeni Ürünler</button>
+      <button class="filter-btn" data-tag="price_changed" onclick="setTagFilter(this, 'price_changed')">🟡 Fiyat Değişenler</button>
+    </div>
     <button class="btn-refresh" id="refresh-btn" onclick="startScraper()">
       🔄 Verileri Güncelle
     </button>
@@ -368,7 +448,8 @@
       {% for p in products %}
         <div class="card"
              data-name="{{ p.product_name | lower }}"
-             data-cat="{{ p.category_name or '' }}">
+             data-cat="{{ p.category_name or '' }}"
+             data-tag="{{ p._tag or '' }}">
           <img
             class="card-img"
             src="{{ p.image_url if p.image_url else '' }}"
@@ -377,11 +458,23 @@
             onerror="this.src='https://placehold.co/300x400/22263a/8892b0?text=Resim+Yok'"
           />
           <div class="card-body">
-            {% if p.category_name %}
-              <span class="card-category">{{ p.category_name }}</span>
-            {% endif %}
+            <div class="card-badges">
+              {% if p.category_name %}
+                <span class="card-category">{{ p.category_name }}</span>
+              {% endif %}
+              {% if p._tag == "new" %}
+                <span class="tag tag-new">🟢 Yeni</span>
+              {% elif p._tag == "price_changed" %}
+                <span class="tag tag-price">🟡 Fiyat Değişti</span>
+              {% endif %}
+            </div>
             <div class="card-name">{{ p.product_name }}</div>
-            <div class="card-price">{{ p.price or '—' }}</div>
+            <div class="card-price">
+              {{ p.price or '—' }}
+              {% if p._tag == "price_changed" and p._old_price %}
+                <span class="old-price">{{ p._old_price }}</span>
+              {% endif %}
+            </div>
           </div>
           <div class="card-footer">
             <a class="btn-visit"
@@ -408,23 +501,42 @@
   let _pollerTimer   = null;
   let _prevStatus    = '{{ scraper_status }}';
   let _reloadPending = false;
+  let _currentSite   = '{{ current_site }}';
+
+  const SITE_LABELS = { kazimalic: 'Kazimalic', istockina: 'Istockina' };
+
+  function switchSite(site) {
+    window.location.href = '/?site=' + site;
+  }
 
   // ── Filter ───────────────────────────────────────────────────────────────────
   const allCards = () => Array.from(document.querySelectorAll('.card'));
+  let _activeTag = '';
+
+  function setTagFilter(btn, tag) {
+    _activeTag = tag;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filterCards();
+  }
 
   function filterCards() {
     const q   = document.getElementById('search').value.toLowerCase().trim();
     const cat = document.getElementById('cat-filter').value;
+    const total = allCards().length;
     let visible = 0;
     allCards().forEach(card => {
       const show = (!q || card.dataset.name.includes(q)) &&
-                   (!cat || card.dataset.cat === cat);
+                   (!cat || card.dataset.cat === cat) &&
+                   (!_activeTag || card.dataset.tag === _activeTag);
       card.classList.toggle('hidden', !show);
       if (show) visible++;
     });
     document.getElementById('visible-count').textContent = visible;
-    document.getElementById('stats-bar').innerHTML =
-      `<strong>${visible}</strong> ürün listeleniyor`;
+    const isFiltered = q || cat || _activeTag;
+    document.getElementById('stats-bar').innerHTML = isFiltered
+      ? `Toplam: <strong>${total}</strong> &nbsp;|&nbsp; Filtre sonrası: <strong>${visible}</strong>`
+      : `<strong>${total}</strong> ürün listeleniyor`;
   }
 
   // ── Toast ────────────────────────────────────────────────────────────────────
@@ -477,7 +589,7 @@
   }
 
   function pollStatus() {
-    fetch('/status')
+    fetch('/status?site=' + _currentSite)
       .then(r => r.json())
       .then(data => {
         const s = data.status;
@@ -491,8 +603,12 @@
         if (_prevStatus === 'running' && s === 'completed' && !_reloadPending) {
           _reloadPending = true;
           document.getElementById('total-count').textContent = data.total_products;
-          showToast(`✅ Scraper tamamlandı — ${data.total_products} ürün`, 'ok');
-          setTimeout(() => location.reload(), 1500);
+          const label = SITE_LABELS[_currentSite] || _currentSite;
+          const parts = [`✅ ${label} verileri güncellendi — ${data.total_products} ürün`];
+          if (data.new_count > 0)           parts.push(`🟢 ${data.new_count} yeni`);
+          if (data.price_changed_count > 0) parts.push(`🟡 ${data.price_changed_count} fiyat değişti`);
+          showToast(parts.join('  '), 'ok');
+          setTimeout(() => location.reload(), 2000);
         }
 
         if (_prevStatus === 'running' && s === 'error') {
@@ -506,7 +622,7 @@
 
   // ── Start scraper ─────────────────────────────────────────────────────────────
   function startScraper() {
-    fetch('/run-scraper', { method: 'POST' })
+    fetch('/run-scraper?site=' + _currentSite, { method: 'POST' })
       .then(r => {
         if (r.status === 409) {
           showToast('⚠️ Scraper zaten çalışıyor', 'warn');

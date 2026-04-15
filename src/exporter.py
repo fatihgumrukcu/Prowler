@@ -1,11 +1,11 @@
 import os
 import pandas as pd
 
-OUTPUT_PATH = "data/output/products.csv"
+DEFAULT_PATH = "data/output/kazimalic_products.csv"
 
 
-def export_to_csv(products):
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+def export_to_csv(products, output_path=DEFAULT_PATH):
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     df = pd.DataFrame(products, columns=[
         "product_name",
         "price",
@@ -14,4 +14,4 @@ def export_to_csv(products):
         "category_name",
     ])
     df.drop_duplicates(subset=["product_url"], inplace=True)
-    df.to_csv(OUTPUT_PATH, index=False, encoding="utf-8")
+    df.to_csv(output_path, index=False, encoding="utf-8")
