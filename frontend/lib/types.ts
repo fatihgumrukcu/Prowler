@@ -1,4 +1,6 @@
 export type CheckStatus = 'passed' | 'warning' | 'failed'
+export type PriorityLabel = 'critical' | 'high' | 'medium' | 'low'
+export type EffortLabel = 'low' | 'medium' | 'high'
 
 export interface Check {
   id: string
@@ -8,6 +10,10 @@ export interface Check {
   message: string
   value: string | null
   recommendation: string | null
+  priority_label: PriorityLabel | null
+  effort: EffortLabel | null
+  why_it_matters: string | null
+  how_to_fix: string | null
 }
 
 export interface Summary {
@@ -31,17 +37,6 @@ export interface Metadata {
   images_missing_alt: number
 }
 
-export interface AnalyzeResponse {
-  url: string
-  final_url: string
-  status_code: number | null
-  redirected: boolean
-  score: number
-  summary: Summary
-  checks: Check[]
-  metadata: Metadata
-}
-
 // ── Crawl types ───────────────────────────────────────────────────────────────
 
 export interface PageResult {
@@ -53,6 +48,8 @@ export interface PageResult {
   checks: Check[]
   discovery_source: string   // "start" | "sitemap" | "crawl"
   error: string | null
+  click_depth: number
+  inlinks_count: number
 }
 
 export interface SiteIssue {
@@ -62,6 +59,10 @@ export interface SiteIssue {
   status: CheckStatus
   page_count: number
   example_urls: string[]
+  priority_label: PriorityLabel | null
+  effort: EffortLabel | null
+  why_it_matters: string | null
+  how_to_fix: string | null
 }
 
 export interface CrawlResult {
@@ -76,6 +77,19 @@ export interface CrawlResult {
   sitemap_urls_crawled: number
   sitemap_urls_unreachable: number
   pages: PageResult[]
+  top_issues: SiteIssue[]
+}
+
+export interface AnalyzeResponse {
+  url: string
+  final_url: string
+  status_code: number | null
+  redirected: boolean
+  score: number
+  summary: Summary
+  checks: Check[]
+  metadata: Metadata
+  top_issues: Check[]
 }
 
 export interface CrawlProgress {
@@ -91,4 +105,27 @@ export interface CrawlJobResponse {
   live_urls: string[]
   result: CrawlResult | null
   error: string | null
+}
+
+// ── Graph types ───────────────────────────────────────────────────────────────
+
+export interface GraphNode {
+  id: string
+  url: string
+  score: number
+  click_depth: number
+  inlinks_count: number
+  status_code: number | null
+  is_orphan: boolean
+  discovery_source: string
+}
+
+export interface GraphEdge {
+  source: string
+  target: string
+}
+
+export interface GraphResponse {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
 }

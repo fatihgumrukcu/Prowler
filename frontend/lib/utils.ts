@@ -1,4 +1,4 @@
-import type { CheckStatus } from './types'
+import type { Check, CheckStatus, PriorityLabel, EffortLabel } from './types'
 
 export const CATEGORY_ORDER = [
   'Meta',
@@ -99,4 +99,54 @@ export function slugifyFilename(value: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     || 'export'
+}
+
+// \u2500\u2500 Priority / effort helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+export const PRIORITY_ORDER: Record<PriorityLabel, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+}
+
+export const PRIORITY_TR: Record<PriorityLabel, string> = {
+  critical: 'Kritik',
+  high: 'Y\u00fcksek',
+  medium: 'Orta',
+  low: 'D\u00fc\u015f\u00fck',
+}
+
+export const EFFORT_TR: Record<EffortLabel, string> = {
+  low: 'Kolay',
+  medium: 'Orta',
+  high: 'Zor',
+}
+
+export function priorityBadgeClass(label: PriorityLabel): string {
+  switch (label) {
+    case 'critical': return 'bg-red-500/15 text-red-400 border-red-500/30'
+    case 'high':     return 'bg-orange-500/15 text-orange-400 border-orange-500/30'
+    case 'medium':   return 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+    case 'low':      return 'bg-zinc-500/15 text-zinc-400 border-zinc-600/40'
+  }
+}
+
+export function effortBadgeClass(effort: EffortLabel): string {
+  switch (effort) {
+    case 'low':    return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+    case 'medium': return 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+    case 'high':   return 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+  }
+}
+
+export function pageTopPriority(checks: Check[]): PriorityLabel | null {
+  let best: PriorityLabel | null = null
+  for (const c of checks) {
+    if (c.status === 'passed' || !c.priority_label) continue
+    if (best === null || PRIORITY_ORDER[c.priority_label] < PRIORITY_ORDER[best]) {
+      best = c.priority_label
+    }
+  }
+  return best
 }

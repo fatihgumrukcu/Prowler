@@ -1,39 +1,26 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CrawlResult, PageResult, Check } from '@/lib/types'
+import type { CrawlResult, PageResult } from '@/lib/types'
 import {
   CATEGORY_ORDER, CATEGORY_TR,
-  scoreLabel, scoreRingColor, scoreTextClass, SOURCE_TR, statusBadgeClass, STATUS_TR,
-  downloadCsv, slugifyFilename,
+  scoreLabel, scoreRingColor, scoreTextClass,
 } from '@/lib/utils'
 import { fetchPageSource } from '@/lib/api'
+import { FilterBar, defaultFilters, type FilterState } from './filter-bar'
+import { DataTable } from './data-table'
+import { PageDetailDrawer } from './page-detail-drawer'
+import { ExportButton } from './export-button'
+import { SiteArchitectureGraph } from './site-architecture-graph'
 
-interface Props { result: CrawlResult }
+type DashboardTab = 'overview' | 'architecture'
 
-// ── Küçük skor halkası (modal başlığı için) ───────────────────────────────────
-function ScoreRing({ score, size = 96 }: { score: number; size?: number }) {
-  const R = size / 2 - 8
-  const C = 2 * Math.PI * R
-  return (
-    <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={size/2} cy={size/2} r={R} fill="none" stroke="#27272a" strokeWidth="8" />
-        <circle cx={size/2} cy={size/2} r={R} fill="none" strokeWidth="8" strokeLinecap="round"
-          strokeDasharray={`${(score / 100) * C} ${C}`}
-          style={{ stroke: scoreRingColor(score) }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={`font-bold tabular-nums leading-none ${scoreTextClass(score)}`}
-          style={{ fontSize: size * 0.27 }}>{score}</span>
-        <span className="text-zinc-600 mt-0.5" style={{ fontSize: size * 0.1 }}>/ 100</span>
-      </div>
-    </div>
-  )
+interface Props {
+  result: CrawlResult
+  jobId: string
 }
 
-// ── Kaynak kodu modalı ────────────────────────────────────────────────────────
+// ── HTML kaynak kodu modalı ───────────────────────────────────────────────────
 function SourceModal({ url, onClose }: { url: string; onClose: () => void }) {
   const [html, setHtml] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -48,8 +35,10 @@ function SourceModal({ url, onClose }: { url: string; onClose: () => void }) {
   }, [url])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
       <div className="bg-zinc-950 border border-zinc-800 rounded-xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800 gap-3 flex-shrink-0">
           <p className="text-xs font-mono text-zinc-400 truncate flex-1">{url}</p>
@@ -59,8 +48,10 @@ function SourceModal({ url, onClose }: { url: string; onClose: () => void }) {
               Sayfayı Aç ↗
             </a>
             {html && (
-              <button onClick={() => navigator.clipboard.writeText(html).then(() => setCopied(true))}
-                className="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-1.5 border border-zinc-700 rounded-lg transition-colors">
+              <button
+                onClick={() => navigator.clipboard.writeText(html).then(() => setCopied(true))}
+                className="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-1.5 border border-zinc-700 rounded-lg transition-colors"
+              >
                 {copied ? 'Kopyalandı ✓' : 'Kopyala'}
               </button>
             )}
@@ -89,125 +80,7 @@ function SourceModal({ url, onClose }: { url: string; onClose: () => void }) {
   )
 }
 
-// ── Sayfa detay modalı ────────────────────────────────────────────────────────
-function PageDetailModal({ page, onClose, onSource }: {
-  page: PageResult
-  onClose: () => void
-  onSource: () => void
-}) {
-  const passed   = page.checks.filter(c => c.status === 'passed').length
-  const warnings = page.checks.filter(c => c.status === 'warning').length
-  const failed   = page.checks.filter(c => c.status === 'failed').length
-
-  // Tüm check'leri kategoriye göre grupla
-  const grouped: Record<string, Check[]> = {}
-  for (const c of page.checks) {
-    if (!grouped[c.category]) grouped[c.category] = []
-    grouped[c.category].push(c)
-  }
-  const orderedCats = [
-    ...CATEGORY_ORDER.filter(c => grouped[c]),
-    ...Object.keys(grouped).filter(c => !CATEGORY_ORDER.includes(c)),
-  ]
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
-
-        {/* ── Modal başlık ── */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 gap-3 flex-shrink-0">
-          <div className="flex items-center gap-4 min-w-0">
-            <ScoreRing score={page.score} size={64} />
-            <div className="min-w-0">
-              <p className={`text-lg font-bold ${scoreTextClass(page.score)}`}>
-                {scoreLabel(page.score)}
-              </p>
-              <p className="text-xs font-mono text-zinc-500 truncate mt-0.5" title={page.url}>
-                {page.url}
-              </p>
-              <div className="flex gap-3 mt-1.5 text-xs tabular-nums">
-                <span className="text-emerald-500">✓ {passed} başarılı</span>
-                <span className="text-amber-400">! {warnings} uyarı</span>
-                <span className="text-red-400">✗ {failed} hatalı</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-2 flex-shrink-0 self-start">
-            <a href={page.url} target="_blank" rel="noopener noreferrer"
-              className="text-xs text-blue-400 hover:text-blue-300 px-3 py-1.5 border border-zinc-700 rounded-lg transition-colors whitespace-nowrap">
-              ↗ Aç
-            </a>
-            <button onClick={onSource}
-              className="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-1.5 border border-zinc-700 rounded-lg transition-colors">
-              &lt;/&gt;
-            </button>
-            <button onClick={onClose}
-              className="text-xs text-zinc-500 hover:text-zinc-200 px-3 py-1.5 border border-zinc-700 rounded-lg transition-colors">
-              ✕
-            </button>
-          </div>
-        </div>
-
-        {/* ── İçerik ── */}
-        {page.error ? (
-          <p className="p-6 text-sm text-red-400 font-mono">{page.error}</p>
-        ) : (
-          <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
-            {orderedCats.map(cat => {
-              const checks = grouped[cat]
-              const catFailed   = checks.filter(c => c.status === 'failed').length
-              const catWarnings = checks.filter(c => c.status === 'warning').length
-              const catPassed   = checks.filter(c => c.status === 'passed').length
-              const dotColor = catFailed > 0 ? 'bg-red-500' : catWarnings > 0 ? 'bg-amber-500' : 'bg-emerald-500'
-
-              return (
-                <div key={cat}>
-                  {/* Kategori başlığı */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`} />
-                    <h4 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider flex-1">
-                      {CATEGORY_TR[cat] ?? cat}
-                    </h4>
-                    <span className="text-xs text-zinc-600 tabular-nums">
-                      {catPassed}/{checks.length} başarılı
-                    </span>
-                  </div>
-
-                  {/* Check satırları */}
-                  <div className="space-y-2 border-l border-zinc-800 pl-4">
-                    {checks.map(c => (
-                      <div key={c.id} className="flex gap-3">
-                        {/* Durum rozeti */}
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 mt-px ${statusBadgeClass(c.status)}`}>
-                          {STATUS_TR[c.status]}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs text-zinc-200 font-medium">{c.label}</p>
-                          <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{c.message}</p>
-                          {c.value && (
-                            <p className="text-[11px] font-mono text-zinc-600 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 mt-1 break-all">
-                              {c.value}
-                            </p>
-                          )}
-                          {c.recommendation && (
-                            <p className="text-xs text-indigo-400/80 mt-1">→ {c.recommendation}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Büyük site skoru halkası ──────────────────────────────────────────────────
+// ── Site skor halkası ─────────────────────────────────────────────────────────
 function SiteScoreRing({ score }: { score: number }) {
   const R = 56, C = 2 * Math.PI * R
   return (
@@ -227,195 +100,15 @@ function SiteScoreRing({ score }: { score: number }) {
   )
 }
 
-// ── Kompakt URL satırı ────────────────────────────────────────────────────────
-function PageRow({ page, selectedCategory }: { page: PageResult; selectedCategory: string | null }) {
-  const [detailOpen, setDetailOpen] = useState(false)
-  const [sourceOpen, setSourceOpen] = useState(false)
-
-  const passed   = page.checks.filter(c => c.status === 'passed').length
-  const warnings = page.checks.filter(c => c.status === 'warning').length
-  const failed   = page.checks.filter(c => c.status === 'failed').length
-  const tc       = scoreTextClass(page.score)
-
-  const catChecks = selectedCategory
-    ? page.checks
-        .filter(c => c.category === selectedCategory && c.status !== 'passed')
-        .sort((a, b) => (a.status === 'failed' ? -1 : 1) - (b.status === 'failed' ? -1 : 1))
-    : []
-
-  return (
-    <>
-      {detailOpen && (
-        <PageDetailModal
-          page={page}
-          onClose={() => setDetailOpen(false)}
-          onSource={() => { setDetailOpen(false); setSourceOpen(true) }}
-        />
-      )}
-      {sourceOpen && (
-        <SourceModal url={page.url} onClose={() => setSourceOpen(false)} />
-      )}
-
-      <div className="border-b border-zinc-800/50 last:border-0 group hover:bg-zinc-800/20 transition-colors">
-        <div className="flex items-center gap-3 px-4 py-2.5">
-          {/* Skor */}
-          <span className={`text-xs font-bold tabular-nums w-7 flex-shrink-0 text-right ${page.error ? 'text-red-400' : tc}`}>
-            {page.error ? '—' : page.score}
-          </span>
-
-          {/* URL — tıklayınca detay modalı açılır */}
-          <button
-            onClick={() => setDetailOpen(true)}
-            className="flex-1 min-w-0 text-xs font-mono text-zinc-400 hover:text-zinc-100 truncate transition-colors text-left"
-            title={page.url}
-          >
-            {page.url}
-          </button>
-
-          {/* Mini istatistikler */}
-          <div className="hidden sm:flex items-center gap-2 text-xs tabular-nums flex-shrink-0">
-            {page.error ? (
-              <span className="text-red-400 text-[10px]">hata</span>
-            ) : (
-              <>
-                {passed   > 0 && <span className="text-emerald-600">✓{passed}</span>}
-                {warnings > 0 && <span className="text-amber-500">!{warnings}</span>}
-                {failed   > 0 && <span className="text-red-500">✗{failed}</span>}
-              </>
-            )}
-          </div>
-
-          {/* Yeni sekmede aç */}
-          <a
-            href={page.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={e => e.stopPropagation()}
-            className="text-[10px] text-zinc-700 hover:text-blue-400 flex-shrink-0 transition-colors opacity-0 group-hover:opacity-100 px-1"
-            title="Sayfayı yeni sekmede aç"
-          >
-            ↗
-          </a>
-
-          {/* Kaynak kodu */}
-          <button
-            onClick={() => setSourceOpen(true)}
-            className="text-[10px] text-zinc-700 hover:text-zinc-400 flex-shrink-0 transition-colors opacity-0 group-hover:opacity-100 px-1"
-            title="Kaynak kodu"
-          >
-            &lt;/&gt;
-          </button>
-        </div>
-
-        {/* Seçili kategorideki hatalı/uyarılı check'ler */}
-        {catChecks.length > 0 && (
-          <div className="px-4 pb-2.5 space-y-1 ml-10">
-            {catChecks.map(c => (
-              <div key={c.id} className="flex items-start gap-2">
-                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 mt-px ${statusBadgeClass(c.status)}`}>
-                  {STATUS_TR[c.status]}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[11px] text-zinc-300 font-medium leading-tight">{c.label}</p>
-                  <p className="text-[11px] text-zinc-600 leading-snug">{c.message}</p>
-                  {c.value && (
-                    <p className="text-[10px] font-mono text-zinc-600 bg-zinc-900 border border-zinc-800/60 rounded px-2 py-0.5 mt-0.5 break-all">
-                      {c.value}
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </>
-  )
-}
-
-// ── CSV dışa aktarma ───────────────────────────────────────────────────────────
-function buildIssueExportRows(
-  pages: PageResult[],
-  selectedCategory: string | null,
-  pageFilter: 'all' | 'failed' | 'warning',
-): string[][] {
-  const headers = ['URL', 'Skor', 'HTTP Durum', 'Kategori', 'Kontrol', 'Durum', 'Mesaj', 'Değer', 'Öneri']
-  const rows: string[][] = [headers]
-
-  for (const page of pages) {
-    const httpStatus = page.error
-      ? page.error
-      : page.status_code != null
-        ? String(page.status_code)
-        : ''
-
-    if (page.error && page.checks.length === 0) {
-      rows.push([
-        page.url,
-        String(page.score),
-        httpStatus,
-        selectedCategory ? (CATEGORY_TR[selectedCategory] ?? selectedCategory) : '',
-        '',
-        'hata',
-        page.error,
-        '',
-        '',
-      ])
-      continue
-    }
-
-    let checks = page.checks.filter(c => c.status !== 'passed')
-    if (selectedCategory) {
-      checks = checks.filter(c => c.category === selectedCategory)
-    } else if (pageFilter === 'failed') {
-      checks = checks.filter(c => c.status === 'failed')
-    } else if (pageFilter === 'warning') {
-      checks = checks.filter(c => c.status === 'warning')
-    }
-
-    if (checks.length === 0) {
-      if (page.error) {
-        rows.push([
-          page.url,
-          String(page.score),
-          httpStatus,
-          selectedCategory ? (CATEGORY_TR[selectedCategory] ?? selectedCategory) : '',
-          '',
-          'hata',
-          page.error,
-          '',
-          '',
-        ])
-      }
-      continue
-    }
-
-    for (const check of checks) {
-      rows.push([
-        page.url,
-        String(page.score),
-        httpStatus,
-        CATEGORY_TR[check.category] ?? check.category,
-        check.label,
-        STATUS_TR[check.status],
-        check.message,
-        check.value ?? '',
-        check.recommendation ?? '',
-      ])
-    }
-  }
-
-  return rows
-}
-
 // ── Ana bileşen ───────────────────────────────────────────────────────────────
-export function CrawlDashboard({ result }: Props) {
-  const [pageFilter, setPageFilter]       = useState<'all' | 'failed' | 'warning'>('all')
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [showAll, setShowAll]             = useState(false)
-  const PAGE_SIZE = 100
-  const pageListRef = useRef<HTMLDivElement>(null)
+export function CrawlDashboard({ result, jobId }: Props) {
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview')
+  const [filters, setFilters] = useState<FilterState>(defaultFilters)
+  const [selectedPage, setSelectedPage] = useState<PageResult | null>(null)
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null)
+  const tableRef = useRef<HTMLDivElement>(null)
 
+  // Kategori bazlı istatistikler (checklist için)
   const categoryStats = useMemo(() => {
     const stats: Record<string, { passed: number; warning: number; failed: number }> = {}
     for (const page of result.pages) {
@@ -432,65 +125,96 @@ export function CrawlDashboard({ result }: Props) {
     ...Object.keys(categoryStats).filter(c => !CATEGORY_ORDER.includes(c)),
   ]
 
+  // Priority filtresi için sayısal sıra
+  const PORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+
+  // Filtrelenmiş sayfa listesi
   const filteredPages = useMemo(() => {
-    let pages = result.pages
+    return result.pages.filter(page => {
+      if (filters.search && !page.url.toLowerCase().includes(filters.search.toLowerCase())) return false
+      if (filters.status === 'failed' && !page.checks.some(c => c.status === 'failed') && !page.error) return false
+      if (filters.status === 'warning' && !page.checks.some(c => c.status === 'warning')) return false
+      if (filters.status === 'passed' && page.checks.some(c => c.status !== 'passed')) return false
+      if (filters.category && !page.checks.some(c => c.category === filters.category && c.status !== 'passed')) return false
+      if (page.score < filters.scoreMin || page.score > filters.scoreMax) return false
+      if (filters.priority !== 'all') {
+        const threshold = PORDER[filters.priority] ?? 3
+        if (!page.checks.some(c =>
+          c.status !== 'passed' &&
+          c.priority_label != null &&
+          (PORDER[c.priority_label] ?? 99) <= threshold
+        )) return false
+      }
+      return true
+    })
+  }, [result.pages, filters])
 
-    // Kategori filtresi: yalnızca o kategoride sorunlu olan sayfalar
-    if (selectedCategory) {
-      pages = pages
-        .filter(p => p.checks.some(c => c.category === selectedCategory && c.status !== 'passed'))
-        .slice()
-        .sort((a, b) => {
-          const failA = a.checks.filter(c => c.category === selectedCategory && c.status === 'failed').length
-          const failB = b.checks.filter(c => c.category === selectedCategory && c.status === 'failed').length
-          if (failB !== failA) return failB - failA
-          const warnA = a.checks.filter(c => c.category === selectedCategory && c.status === 'warning').length
-          const warnB = b.checks.filter(c => c.category === selectedCategory && c.status === 'warning').length
-          return warnB - warnA
-        })
-      return pages
-    }
-
-    // Durum filtresi (kategori seçili değilken)
-    if (pageFilter === 'failed')  return pages.filter(p => p.checks.some(c => c.status === 'failed') || !!p.error)
-    if (pageFilter === 'warning') return pages.filter(p => p.checks.some(c => c.status === 'warning'))
-    return pages
-  }, [result.pages, selectedCategory, pageFilter])
-
-  const displayPages = showAll ? filteredPages : filteredPages.slice(0, PAGE_SIZE)
-  const canExportCsv = filteredPages.length > 0 && (selectedCategory !== null || pageFilter !== 'all')
-
+  // Checklist kategori seçimi → FilterBar kategori filtresi güncellenir
   function selectCategory(cat: string) {
-    const isDeselect = selectedCategory === cat
-    setSelectedCategory(isDeselect ? null : cat)
-    setShowAll(false)
-    if (!isDeselect) {
-      setTimeout(() => {
-        pageListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 50)
+    const next = filters.category === cat ? null : cat
+    setFilters(f => ({ ...f, category: next }))
+    if (next) {
+      setTimeout(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
     }
   }
 
-  function exportFilteredCsv() {
-    const date = new Date().toISOString().slice(0, 10)
-    const label = selectedCategory
-      ? slugifyFilename(CATEGORY_TR[selectedCategory] ?? selectedCategory)
-      : pageFilter === 'failed'
-        ? 'hatali'
-        : 'uyarili'
-    const filename = `prowler-${label}-${date}.csv`
-    const rows = buildIssueExportRows(filteredPages, selectedCategory, pageFilter)
-    downloadCsv(filename, rows)
+  // Drawer kapatılınca seçimi sıfırla
+  function handleDrawerClose() {
+    setSelectedPage(null)
   }
+
+  // Filter key: DataTable'ın sayfa numarasını sıfırlaması için
+  const filterKey = `${filters.search}|${filters.status}|${filters.category ?? ''}|${filters.scoreMin}|${filters.scoreMax}|${filters.priority}`
 
   return (
     <div className="space-y-5">
+      {/* Modaller */}
+      {sourceUrl && <SourceModal url={sourceUrl} onClose={() => setSourceUrl(null)} />}
+      <PageDetailDrawer
+        page={selectedPage}
+        onClose={handleDrawerClose}
+        onSource={url => { setSelectedPage(null); setSourceUrl(url) }}
+      />
 
-      {/* ── 1. Toplam Site Skoru ───────────────────────────────────────────── */}
+      {/* ── Tab seçici ────────────────────────────────────────────────────── */}
+      <div className="flex gap-1 p-1 bg-zinc-900 border border-zinc-800 rounded-xl w-fit">
+        {([['overview', 'Genel Bakış'], ['architecture', 'Mimari Graf']] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === tab
+                ? 'bg-zinc-700 text-zinc-100'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Mimari Graf sekmesi ───────────────────────────────────────────── */}
+      {activeTab === 'architecture' && (
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5">
+          <SiteArchitectureGraph
+            jobId={jobId}
+            pages={result.pages}
+            onSelectPage={setSelectedPage}
+          />
+        </div>
+      )}
+
+      {/* ── Genel Bakış sekmesi ───────────────────────────────────────────── */}
+      {activeTab === 'overview' && <>
+
+      {/* ── 1. Site Skoru ─────────────────────────────────────────────────── */}
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
-        <p className="text-xs text-zinc-500 uppercase tracking-widest text-center mb-6">
-          Toplam Site SEO Skoru
-        </p>
+        <div className="flex items-center justify-between mb-6">
+          <p className="text-xs text-zinc-500 uppercase tracking-widest flex-1 text-center">
+            Toplam Site SEO Skoru
+          </p>
+          <ExportButton jobId={jobId} />
+        </div>
         <div className="flex flex-col sm:flex-row items-center gap-8">
           <SiteScoreRing score={result.site_score} />
           <div className="flex-1 w-full space-y-4">
@@ -530,12 +254,12 @@ export function CrawlDashboard({ result }: Props) {
         </div>
       </div>
 
-      {/* ── 2. Kontrol Listesi ─────────────────────────────────────────────── */}
+      {/* ── 2. Kategori Kontrol Listesi ───────────────────────────────────── */}
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-5 py-3.5 border-b border-zinc-800">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider">Kontrol Listesi</h3>
-            <p className="text-[10px] text-zinc-600">Kategori seç → listeyi filtrele</p>
+            <p className="text-[10px] text-zinc-600">Kategori seç → tabloyu filtrele</p>
           </div>
         </div>
         <div className="divide-y divide-zinc-800/40">
@@ -546,25 +270,27 @@ export function CrawlDashboard({ result }: Props) {
             const warnRatio = s.warning / total
             const icon = failRatio > 0.2 ? '✗' : warnRatio > 0.3 ? '!' : '✓'
             const iconColor = failRatio > 0.2 ? 'text-red-400' : warnRatio > 0.3 ? 'text-amber-400' : 'text-emerald-400'
-            const isActive = selectedCategory === cat
+            const isActive = filters.category === cat
 
             return (
               <button
                 key={cat}
                 onClick={() => selectCategory(cat)}
-                className={`w-full flex items-center gap-4 px-5 py-3 transition-colors text-left
-                  ${isActive
+                className={`w-full flex items-center gap-4 px-5 py-3 transition-colors text-left ${
+                  isActive
                     ? 'bg-zinc-800/70 ring-1 ring-inset ring-zinc-600'
                     : 'hover:bg-zinc-800/30'
-                  }`}
+                }`}
               >
                 <span className={`text-sm font-bold w-4 flex-shrink-0 ${iconColor}`}>{icon}</span>
                 <span className={`text-sm w-40 flex-shrink-0 ${isActive ? 'text-zinc-100 font-semibold' : 'text-zinc-300'}`}>
                   {CATEGORY_TR[cat] ?? cat}
                 </span>
                 <div className="flex-1 bg-zinc-800 rounded-full h-1.5 overflow-hidden">
-                  <div className="h-full rounded-full bg-emerald-500"
-                    style={{ width: `${Math.round((s.passed / total) * 100)}%` }} />
+                  <div
+                    className="h-full rounded-full bg-emerald-500"
+                    style={{ width: `${Math.round((s.passed / total) * 100)}%` }}
+                  />
                 </div>
                 <div className="flex gap-3 text-xs tabular-nums flex-shrink-0">
                   <span className="text-emerald-500">✓{s.passed}</span>
@@ -582,85 +308,24 @@ export function CrawlDashboard({ result }: Props) {
         </div>
       </div>
 
-      {/* ── 2. Sayfa Listesi ───────────────────────────────────────────────── */}
-      <div ref={pageListRef} className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3.5 border-b border-zinc-800 gap-3">
-          <div className="flex items-center gap-3 flex-wrap min-w-0">
-            <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider flex-shrink-0">
-              Taranan Sayfalar
-            </h3>
-            <span className="text-xs text-zinc-600 tabular-nums flex-shrink-0">
-              {filteredPages.length} URL
-            </span>
-            {selectedCategory && (
-              <div className="flex items-center gap-1.5 bg-zinc-800 rounded-full pl-3 pr-1.5 py-1">
-                <span className="text-xs text-zinc-300">{CATEGORY_TR[selectedCategory] ?? selectedCategory}</span>
-                <button
-                  onClick={() => { setSelectedCategory(null); setShowAll(false) }}
-                  className="text-zinc-500 hover:text-zinc-200 transition-colors text-xs leading-none px-1"
-                  title="Filtreyi kaldır"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {canExportCsv && (
-              <button
-                onClick={exportFilteredCsv}
-                className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 transition-colors whitespace-nowrap"
-                title={`${filteredPages.length} kaydı CSV olarak indir`}
-              >
-                CSV İndir ({filteredPages.length})
-              </button>
-            )}
-            {!selectedCategory && (
-              <div className="flex gap-1">
-                {(['all', 'failed', 'warning'] as const).map(f => (
-                  <button key={f}
-                    onClick={() => { setPageFilter(f); setShowAll(false) }}
-                    className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                      pageFilter === f ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
-                    }`}>
-                    {f === 'all' ? 'Tümü' : f === 'failed' ? 'Hatalı' : 'Uyarılı'}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Kolon başlıkları */}
-        <div className="flex items-center gap-3 px-4 py-2 bg-zinc-900/60 border-b border-zinc-800/60">
-          <span className="text-[10px] text-zinc-600 w-7 text-right flex-shrink-0">SKOR</span>
-          <span className="text-[10px] text-zinc-600 flex-1">URL — tıkla → detay</span>
-          <span className="text-[10px] text-zinc-600 hidden sm:block w-24 text-right flex-shrink-0">✓ / ! / ✗</span>
-          <span className="w-10 flex-shrink-0" />
-        </div>
-
-        <div>
-          {filteredPages.length === 0 ? (
-            <p className="px-5 py-8 text-sm text-zinc-600 text-center">
-              {selectedCategory
-                ? `"${CATEGORY_TR[selectedCategory] ?? selectedCategory}" kategorisinde sorunlu sayfa bulunamadı.`
-                : 'Sonuç bulunamadı.'
-              }
-            </p>
-          ) : (
-            displayPages.map(page => <PageRow key={page.url} page={page} selectedCategory={selectedCategory} />)
-          )}
-        </div>
-
-        {filteredPages.length > PAGE_SIZE && !showAll && (
-          <button onClick={() => setShowAll(true)}
-            className="w-full py-3 text-xs text-zinc-500 hover:text-zinc-300 border-t border-zinc-800/50 transition-colors">
-            {filteredPages.length - PAGE_SIZE} URL daha göster
-          </button>
-        )}
+      {/* ── 3. Filtreli Sayfa Tablosu ─────────────────────────────────────── */}
+      <div ref={tableRef} className="space-y-3 scroll-mt-4">
+        <FilterBar
+          filters={filters}
+          categories={checklistCategories}
+          onChange={setFilters}
+          totalCount={result.pages.length}
+          filteredCount={filteredPages.length}
+        />
+        <DataTable
+          pages={filteredPages}
+          onSelect={setSelectedPage}
+          selectedUrl={selectedPage?.url ?? null}
+          resetKey={filterKey}
+        />
       </div>
 
-
+      </> /* end overview tab */}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from models import CrawlJobResponse, CrawlResult
 
@@ -15,6 +15,7 @@ class CrawlJob:
     pages_done: int = 0         # successfully analyzed
     pages_failed: int = 0       # fetch/parse failures
     completed_urls: List[str] = field(default_factory=list)  # live URL feed
+    graph_edges: List[Tuple[str, str]] = field(default_factory=list)
     result: Optional[CrawlResult] = None
     error: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

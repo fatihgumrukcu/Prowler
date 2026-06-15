@@ -24,7 +24,7 @@ export function TechnicalOverview({ data }: Props) {
 
   const rows: [string, string][] = [
     ['URL', url],
-    ['Final URL', final_url],
+    ['Son URL', final_url],
     ['HTTP Kodu', status_code ? String(status_code) : '—'],
     ['Yönlendirme', redirected ? 'Evet' : 'Hayır'],
     ['Başlık (Title)', trunc(m.title, 120)],
