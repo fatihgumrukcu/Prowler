@@ -14,6 +14,11 @@ class Check(BaseModel):
     message: str
     value: Optional[str] = None
     recommendation: Optional[str] = None
+    # Prioritization layer (populated by analyzer/prioritizer.py)
+    priority_label: Optional[Literal["critical", "high", "medium", "low"]] = None
+    effort: Optional[Literal["low", "medium", "high"]] = None
+    why_it_matters: Optional[str] = None
+    how_to_fix: Optional[str] = None
 
 
 class Summary(BaseModel):
@@ -63,6 +68,7 @@ class AnalyzeResponse(BaseModel):
     summary: Summary
     checks: List[Check]
     metadata: Metadata
+    top_issues: List[Check] = Field(default_factory=list)
 
 
 # ── Crawl models ──────────────────────────────────────────────────────────────
@@ -92,6 +98,11 @@ class SiteIssue(BaseModel):
     status: Literal["passed", "warning", "failed"]
     page_count: int
     example_urls: List[str]
+    # Prioritization layer (populated by analyzer/prioritizer.py)
+    priority_label: Optional[Literal["critical", "high", "medium", "low"]] = None
+    effort: Optional[Literal["low", "medium", "high"]] = None
+    why_it_matters: Optional[str] = None
+    how_to_fix: Optional[str] = None
 
 
 class CrawlResult(BaseModel):
@@ -106,6 +117,7 @@ class CrawlResult(BaseModel):
     sitemap_urls_crawled: int = 0
     sitemap_urls_unreachable: int = 0
     pages: List[PageResult]
+    top_issues: List[SiteIssue] = Field(default_factory=list)
 
 
 class CrawlJobResponse(BaseModel):

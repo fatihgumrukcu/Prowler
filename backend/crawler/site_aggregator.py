@@ -14,8 +14,8 @@ def aggregate(
     pages: List[PageResult],
     sitemap_urls_found: int = 0,
 ) -> CrawlResult:
-    successful = [p for p in pages if not p.error]
-    failed_count = sum(1 for p in pages if p.error)
+    successful = [p for p in pages if not p.error and (p.status_code is None or p.status_code < 400)]
+    failed_count = sum(1 for p in pages if p.error or (p.status_code is not None and p.status_code >= 400))
 
     # Site score: mean of successful page scores (0 if none)
     site_score = (

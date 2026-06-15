@@ -15,6 +15,7 @@ from analyzer.pagespeed_analyzer import analyze_pagespeed
 from crawler.crawler import crawl_site
 from crawler.job_store import job_store
 from crawler.site_aggregator import aggregate
+from analyzer.prioritizer import enrich_checks, enrich_crawl_result, get_top_issues
 from models import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -73,6 +74,8 @@ async def analyze(request: AnalyzeRequest):
             failed=sum(1 for c in checks if c.status == "failed"),
         )
 
+    checks = enrich_checks(checks, scope=1)
+
     return AnalyzeResponse(
         url=url,
         final_url=final_url,
@@ -82,6 +85,7 @@ async def analyze(request: AnalyzeRequest):
         summary=summary,
         checks=checks,
         metadata=metadata,
+        top_issues=get_top_issues(checks),
     )
 
 
@@ -104,8 +108,13 @@ async def _run_crawl_job(
             job_id=job_id,
             job_store=job_store,
         )
+        # Per-page priority enrichment (scope=1 per page)
+        for page in pages:
+            page.checks = enrich_checks(page.checks, scope=1)
         domain = urlparse(start_url).netloc
         result = aggregate(start_url, domain, pages, sitemap_urls_found)
+        # Site-level priority enrichment (scope=page_count per issue)
+        result = enrich_crawl_result(result)
         job_store.update(job_id, status="done", result=result)
     except Exception as exc:
         job_store.update(job_id, status="error", error=str(exc)[:500])

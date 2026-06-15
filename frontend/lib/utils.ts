@@ -72,3 +72,31 @@ export function trunc(value: string | null, max: number): string {
   if (!value) return '—'
   return value.length > max ? value.slice(0, max) + '…' : value
 }
+
+function escapeCsvField(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}
+
+export function downloadCsv(filename: string, rows: string[][]): void {
+  const content = '\uFEFF' + rows.map(row => row.map(escapeCsvField).join(',')).join('\n')
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function slugifyFilename(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'export'
+}

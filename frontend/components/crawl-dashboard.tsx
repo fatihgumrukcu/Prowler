@@ -5,6 +5,7 @@ import type { CrawlResult, PageResult, Check } from '@/lib/types'
 import {
   CATEGORY_ORDER, CATEGORY_TR,
   scoreLabel, scoreRingColor, scoreTextClass, SOURCE_TR, statusBadgeClass, STATUS_TR,
+  downloadCsv, slugifyFilename,
 } from '@/lib/utils'
 import { fetchPageSource } from '@/lib/api'
 
@@ -332,6 +333,81 @@ function PageRow({ page, selectedCategory }: { page: PageResult; selectedCategor
   )
 }
 
+// ── CSV dışa aktarma ───────────────────────────────────────────────────────────
+function buildIssueExportRows(
+  pages: PageResult[],
+  selectedCategory: string | null,
+  pageFilter: 'all' | 'failed' | 'warning',
+): string[][] {
+  const headers = ['URL', 'Skor', 'HTTP Durum', 'Kategori', 'Kontrol', 'Durum', 'Mesaj', 'Değer', 'Öneri']
+  const rows: string[][] = [headers]
+
+  for (const page of pages) {
+    const httpStatus = page.error
+      ? page.error
+      : page.status_code != null
+        ? String(page.status_code)
+        : ''
+
+    if (page.error && page.checks.length === 0) {
+      rows.push([
+        page.url,
+        String(page.score),
+        httpStatus,
+        selectedCategory ? (CATEGORY_TR[selectedCategory] ?? selectedCategory) : '',
+        '',
+        'hata',
+        page.error,
+        '',
+        '',
+      ])
+      continue
+    }
+
+    let checks = page.checks.filter(c => c.status !== 'passed')
+    if (selectedCategory) {
+      checks = checks.filter(c => c.category === selectedCategory)
+    } else if (pageFilter === 'failed') {
+      checks = checks.filter(c => c.status === 'failed')
+    } else if (pageFilter === 'warning') {
+      checks = checks.filter(c => c.status === 'warning')
+    }
+
+    if (checks.length === 0) {
+      if (page.error) {
+        rows.push([
+          page.url,
+          String(page.score),
+          httpStatus,
+          selectedCategory ? (CATEGORY_TR[selectedCategory] ?? selectedCategory) : '',
+          '',
+          'hata',
+          page.error,
+          '',
+          '',
+        ])
+      }
+      continue
+    }
+
+    for (const check of checks) {
+      rows.push([
+        page.url,
+        String(page.score),
+        httpStatus,
+        CATEGORY_TR[check.category] ?? check.category,
+        check.label,
+        STATUS_TR[check.status],
+        check.message,
+        check.value ?? '',
+        check.recommendation ?? '',
+      ])
+    }
+  }
+
+  return rows
+}
+
 // ── Ana bileşen ───────────────────────────────────────────────────────────────
 export function CrawlDashboard({ result }: Props) {
   const [pageFilter, setPageFilter]       = useState<'all' | 'failed' | 'warning'>('all')
@@ -382,6 +458,7 @@ export function CrawlDashboard({ result }: Props) {
   }, [result.pages, selectedCategory, pageFilter])
 
   const displayPages = showAll ? filteredPages : filteredPages.slice(0, PAGE_SIZE)
+  const canExportCsv = filteredPages.length > 0 && (selectedCategory !== null || pageFilter !== 'all')
 
   function selectCategory(cat: string) {
     const isDeselect = selectedCategory === cat
@@ -394,10 +471,66 @@ export function CrawlDashboard({ result }: Props) {
     }
   }
 
+  function exportFilteredCsv() {
+    const date = new Date().toISOString().slice(0, 10)
+    const label = selectedCategory
+      ? slugifyFilename(CATEGORY_TR[selectedCategory] ?? selectedCategory)
+      : pageFilter === 'failed'
+        ? 'hatali'
+        : 'uyarili'
+    const filename = `prowler-${label}-${date}.csv`
+    const rows = buildIssueExportRows(filteredPages, selectedCategory, pageFilter)
+    downloadCsv(filename, rows)
+  }
+
   return (
     <div className="space-y-5">
 
-      {/* ── 1. Kontrol Listesi ─────────────────────────────────────────────── */}
+      {/* ── 1. Toplam Site Skoru ───────────────────────────────────────────── */}
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+        <p className="text-xs text-zinc-500 uppercase tracking-widest text-center mb-6">
+          Toplam Site SEO Skoru
+        </p>
+        <div className="flex flex-col sm:flex-row items-center gap-8">
+          <SiteScoreRing score={result.site_score} />
+          <div className="flex-1 w-full space-y-4">
+            <p className={`text-2xl font-bold ${scoreTextClass(result.site_score)}`}>
+              {scoreLabel(result.site_score)}
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Taranan', value: result.pages_crawled, color: 'text-zinc-100' },
+                { label: 'Hatalı', value: result.pages_failed, color: 'text-red-400' },
+                ...(result.sitemap_urls_found > 0 ? [
+                  { label: 'Sitemap URL', value: result.sitemap_urls_found, color: 'text-blue-400' },
+                  { label: 'Erişilemeyen', value: result.sitemap_urls_unreachable, color: 'text-zinc-500' },
+                ] : []),
+              ].map(({ label, value, color }) => (
+                <div key={label} className="bg-zinc-800/40 rounded-lg p-3 text-center">
+                  <p className={`text-xl font-bold tabular-nums ${color}`}>{value}</p>
+                  <p className="text-xs text-zinc-600 mt-0.5">{label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { key: 'passed',   label: 'Başarılı',  color: 'text-emerald-400', bg: 'bg-emerald-500/5 border-emerald-500/20' },
+                { key: 'warnings', label: 'Uyarı',     color: 'text-amber-400',   bg: 'bg-amber-500/5 border-amber-500/20' },
+                { key: 'failed',   label: 'Başarısız', color: 'text-red-400',     bg: 'bg-red-500/5 border-red-500/20' },
+              ].map(({ key, label, color, bg }) => (
+                <div key={key} className={`border rounded-xl p-3 text-center ${bg}`}>
+                  <p className={`text-2xl font-bold tabular-nums ${color}`}>
+                    {result.site_summary[key as keyof typeof result.site_summary]}
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-1">{label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 2. Kontrol Listesi ─────────────────────────────────────────────── */}
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-5 py-3.5 border-b border-zinc-800">
           <div className="flex items-center justify-between">
@@ -472,19 +605,30 @@ export function CrawlDashboard({ result }: Props) {
               </div>
             )}
           </div>
-          {!selectedCategory && (
-            <div className="flex gap-1 flex-shrink-0">
-              {(['all', 'failed', 'warning'] as const).map(f => (
-                <button key={f}
-                  onClick={() => { setPageFilter(f); setShowAll(false) }}
-                  className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                    pageFilter === f ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
-                  }`}>
-                  {f === 'all' ? 'Tümü' : f === 'failed' ? 'Hatalı' : 'Uyarılı'}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {canExportCsv && (
+              <button
+                onClick={exportFilteredCsv}
+                className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 transition-colors whitespace-nowrap"
+                title={`${filteredPages.length} kaydı CSV olarak indir`}
+              >
+                CSV İndir ({filteredPages.length})
+              </button>
+            )}
+            {!selectedCategory && (
+              <div className="flex gap-1">
+                {(['all', 'failed', 'warning'] as const).map(f => (
+                  <button key={f}
+                    onClick={() => { setPageFilter(f); setShowAll(false) }}
+                    className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                      pageFilter === f ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+                    }`}>
+                    {f === 'all' ? 'Tümü' : f === 'failed' ? 'Hatalı' : 'Uyarılı'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Kolon başlıkları */}
@@ -516,49 +660,6 @@ export function CrawlDashboard({ result }: Props) {
         )}
       </div>
 
-      {/* ── 3. Toplam Site Skoru ───────────────────────────────────────────── */}
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
-        <p className="text-xs text-zinc-500 uppercase tracking-widest text-center mb-6">
-          Toplam Site SEO Skoru
-        </p>
-        <div className="flex flex-col sm:flex-row items-center gap-8">
-          <SiteScoreRing score={result.site_score} />
-          <div className="flex-1 w-full space-y-4">
-            <p className={`text-2xl font-bold ${scoreTextClass(result.site_score)}`}>
-              {scoreLabel(result.site_score)}
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: 'Taranan', value: result.pages_crawled, color: 'text-zinc-100' },
-                { label: 'Hatalı', value: result.pages_failed, color: 'text-red-400' },
-                ...(result.sitemap_urls_found > 0 ? [
-                  { label: 'Sitemap URL', value: result.sitemap_urls_found, color: 'text-blue-400' },
-                  { label: 'Erişilemeyen', value: result.sitemap_urls_unreachable, color: 'text-zinc-500' },
-                ] : []),
-              ].map(({ label, value, color }) => (
-                <div key={label} className="bg-zinc-800/40 rounded-lg p-3 text-center">
-                  <p className={`text-xl font-bold tabular-nums ${color}`}>{value}</p>
-                  <p className="text-xs text-zinc-600 mt-0.5">{label}</p>
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { key: 'passed',   label: 'Başarılı',  color: 'text-emerald-400', bg: 'bg-emerald-500/5 border-emerald-500/20' },
-                { key: 'warnings', label: 'Uyarı',     color: 'text-amber-400',   bg: 'bg-amber-500/5 border-amber-500/20' },
-                { key: 'failed',   label: 'Başarısız', color: 'text-red-400',     bg: 'bg-red-500/5 border-red-500/20' },
-              ].map(({ key, label, color, bg }) => (
-                <div key={key} className={`border rounded-xl p-3 text-center ${bg}`}>
-                  <p className={`text-2xl font-bold tabular-nums ${color}`}>
-                    {result.site_summary[key as keyof typeof result.site_summary]}
-                  </p>
-                  <p className="text-xs text-zinc-500 mt-1">{label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
 
     </div>
   )

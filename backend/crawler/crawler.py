@@ -183,6 +183,17 @@ async def crawl_site(
                     status_code = resp.status_code
                     html = resp.text or ""
 
+                    if status_code >= 400:
+                        result = PageResult(
+                            url=url,
+                            final_url=final_url,
+                            status_code=status_code,
+                            score=0,
+                            discovery_source=source,
+                            error=f"HTTP {status_code}",
+                        )
+                        return result, []
+
                     if html:
                         soup = BeautifulSoup(html, "html.parser")
 
