@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<!-- FIXTURE: 3 of 3 images missing width/height (>50%) → image_dimensions: failed -->
+<html lang="tr">
+<head><meta charset="utf-8"><title>Boyutsu Görsel Sayfası Test</title></head>
+<body>
+  <h1>Görsel Boyut Testi</h1>
+  <img src="/img/a.jpg" alt="Görsel 1">   <!-- no width/height -->
+  <img src="/img/b.jpg" alt="Görsel 2">   <!-- no width/height -->
+  <img src="/img/c.jpg" alt="Görsel 3">   <!-- no width/height -->
+  <p>Hiçbir görselde width/height yok; CLS riski var. Formatlar legacy (jpg) → modern_format warning.</p>
+</body>
+</html>

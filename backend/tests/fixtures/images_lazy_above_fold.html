@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<!-- FIXTURE: first image has loading="lazy" → image_lazy_above_fold: warning -->
+<html lang="tr">
+<head><meta charset="utf-8"><title>Lazy Load Testi Sayfası Burada</title></head>
+<body>
+  <h1>Lazy Load Testi</h1>
+  <!-- First image (above fold) has lazy loading → hurts LCP -->
+  <img src="/images/hero.webp" alt="Hero görseli" width="800" height="400" loading="lazy">
+  <img src="/images/below.webp" alt="Aşağı görsel" width="600" height="300" loading="lazy">
+  <p>Birinci görsel lazy-load kullanıyor; LCP metriğini olumsuz etkiler.</p>
+</body>
+</html>
