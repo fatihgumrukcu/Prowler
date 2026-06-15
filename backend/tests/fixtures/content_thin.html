@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<!-- FIXTURE: only ~30 visible words → content_word_count: failed (<100) -->
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>İnce İçerik Sayfası Test</title>
+  <script>// lots of js to inflate HTML but not content
+    var a = 1; var b = 2; var c = 3;
+  </script>
+  <style>body { margin: 0; } h1 { color: red; }</style>
+</head>
+<body>
+  <h1>Sayfa Başlığı</h1>
+  <p>Çok az içerik var.</p>
+  <!-- content is deliberately sparse: only ~8 visible words above -->
+  <div id="root"></div>
+</body>
+</html>

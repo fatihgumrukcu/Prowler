@@ -89,6 +89,8 @@ class PageResult(BaseModel):
     checks: List[Check] = Field(default_factory=list)
     discovery_source: str = "crawl"   # "start" | "sitemap" | "crawl"
     error: Optional[str] = None
+    click_depth: int = 0
+    inlinks_count: int = 0
 
 
 class SiteIssue(BaseModel):
@@ -127,3 +129,26 @@ class CrawlJobResponse(BaseModel):
     live_urls: List[str] = Field(default_factory=list)
     result: Optional[CrawlResult] = None
     error: Optional[str] = None
+
+
+# ── Graph models ───────────────────────────────────────────────────────────────
+
+class GraphNode(BaseModel):
+    id: str
+    url: str
+    score: int
+    click_depth: int
+    inlinks_count: int
+    status_code: Optional[int] = None
+    is_orphan: bool = False
+    discovery_source: str = "crawl"
+
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+
+
+class GraphResponse(BaseModel):
+    nodes: List[GraphNode]
+    edges: List[GraphEdge]

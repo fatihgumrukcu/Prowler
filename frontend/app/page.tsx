@@ -12,6 +12,8 @@ import { TechnicalOverview } from '@/components/technical-overview'
 import { AuditSection } from '@/components/audit-section'
 import { CrawlProgress } from '@/components/crawl-progress'
 import { CrawlDashboard } from '@/components/crawl-dashboard'
+import { HintsPanel } from '@/components/hints-panel'
+import { ExportButton } from '@/components/export-button'
 
 type Mode = 'analyze' | 'crawl'
 
@@ -195,7 +197,11 @@ export default function HomePage() {
               />
               <SummaryCards summary={analyzeResult.summary} />
             </div>
+            <div className="flex justify-end">
+              <ExportButton analyzeResult={analyzeResult} />
+            </div>
             <TechnicalOverview data={analyzeResult} />
+            <HintsPanel checks={analyzeResult.checks} />
             <div className="space-y-3">
               <p className="text-xs text-zinc-500 uppercase tracking-widest">Denetim Sonuçları</p>
               {Object.entries(groupedChecks).map(([category, checks]) => (
@@ -207,7 +213,13 @@ export default function HomePage() {
 
         {/* Crawl: done — show dashboard */}
         {crawlDone && !loading && (
-          <CrawlDashboard result={crawlJob!.result!} />
+          <>
+            <HintsPanel
+              siteIssues={crawlJob!.result!.site_issues}
+              title="Site Geneli Öncelikli Sorunlar"
+            />
+            <CrawlDashboard result={crawlJob!.result!} jobId={crawlJob!.job_id} />
+          </>
         )}
 
         {/* Empty state */}

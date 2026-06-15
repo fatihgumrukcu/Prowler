@@ -99,6 +99,9 @@ def _is_disallowed(path: str, rules: List[str]) -> bool:
 
 # ── Main crawler ──────────────────────────────────────────────────────────────
 
+EDGE_STORE_CAP = 5000
+
+
 async def crawl_site(
     start_url: str,
     max_pages: int,
@@ -106,11 +109,11 @@ async def crawl_site(
     include_subdomains: bool,
     job_id: str,
     job_store,
-) -> Tuple[List[PageResult], int, int, int]:
+) -> Tuple[List[PageResult], int, int, int, List[Tuple[str, str]]]:
     """
     BFS crawl from start_url seeded with sitemap URLs.
 
-    Returns (page_results, pages_done, pages_failed, sitemap_urls_found).
+    Returns (page_results, pages_done, pages_failed, sitemap_urls_found, crawl_edges).
     Continuously updates job_store with live progress.
     """
     max_pages = min(max_pages, HARD_CAP)
@@ -169,6 +172,7 @@ async def crawl_site(
 
         pages_done = 0
         pages_failed = 0
+        crawl_edges: List[Tuple[str, str]] = []
 
         # ── Phase 4: BFS ─────────────────────────────────────────────────────
 
@@ -191,28 +195,28 @@ async def crawl_site(
                             score=0,
                             discovery_source=source,
                             error=f"HTTP {status_code}",
+                            click_depth=depth,
                         )
                         return result, []
 
                     if html:
                         soup = BeautifulSoup(html, "html.parser")
 
-                        # Discover links for next BFS level
-                        if depth < max_depth:
-                            for a in soup.find_all("a", href=True):
-                                href = (a.get("href") or "").strip()
-                                if not href or href.startswith(
-                                    ("javascript:", "mailto:", "tel:", "#")
-                                ):
-                                    continue
-                                abs_url = urljoin(final_url, href)
-                                ap = urlparse(abs_url)
-                                if (
-                                    _same_domain(ap.netloc, base_netloc, include_subdomains)
-                                    and _is_html_url(abs_url)
-                                    and not _is_disallowed(ap.path, disallowed)
-                                ):
-                                    new_links.append(_norm(abs_url))
+                        # Always discover links (for edge collection + frontier)
+                        for a in soup.find_all("a", href=True):
+                            href = (a.get("href") or "").strip()
+                            if not href or href.startswith(
+                                ("javascript:", "mailto:", "tel:", "#")
+                            ):
+                                continue
+                            abs_url = urljoin(final_url, href)
+                            ap = urlparse(abs_url)
+                            if (
+                                _same_domain(ap.netloc, base_netloc, include_subdomains)
+                                and _is_html_url(abs_url)
+                                and not _is_disallowed(ap.path, disallowed)
+                            ):
+                                new_links.append(_norm(abs_url))
 
                         checks, score, summary, _ = analyze_html(soup, final_url, raw_html=html)
                     else:
@@ -227,6 +231,7 @@ async def crawl_site(
                         summary=summary,
                         checks=checks,
                         discovery_source=source,
+                        click_depth=depth,
                     )
                     return result, new_links
 
@@ -237,6 +242,7 @@ async def crawl_site(
                         score=0,
                         discovery_source=source,
                         error=str(exc)[:300],
+                        click_depth=depth,
                     )
                     return result, []
 
@@ -266,13 +272,14 @@ async def crawl_site(
                 # Push URL to live feed
                 job_store.add_completed_url(job_id, page_result.url)
 
-                # Enqueue newly discovered crawl links
-                if depth < max_depth:
-                    for link in new_links:
-                        if link not in visited:
-                            visited.add(link)
-                            url_sources[link] = "crawl"
-                            frontier.append((link, depth + 1))
+                # Record edges + enqueue for next BFS level
+                for link in new_links:
+                    if len(crawl_edges) < EDGE_STORE_CAP:
+                        crawl_edges.append((url, link))
+                    if depth < max_depth and link not in visited:
+                        visited.add(link)
+                        url_sources[link] = "crawl"
+                        frontier.append((link, depth + 1))
 
             job_store.update(
                 job_id,
@@ -281,4 +288,4 @@ async def crawl_site(
                 pages_found=len(visited),
             )
 
-    return page_results, pages_done, pages_failed, sitemap_urls_found
+    return page_results, pages_done, pages_failed, sitemap_urls_found, crawl_edges

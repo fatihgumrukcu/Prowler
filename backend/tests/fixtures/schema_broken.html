@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<!-- FIXTURE: malformed JSON in ld+json block → schema_json_ld: warning (parse error) -->
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>Bozuk Schema Sayfası Test Başlığı</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Bozuk JSON-LD",
+    INVALID_JSON_HERE  ←←← intentional syntax error
+  }
+  </script>
+</head>
+<body>
+  <h1>Bozuk Schema</h1>
+  <p>JSON-LD bloğu sözdizimi hatası içeriyor; parse edilemez.</p>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<!-- FIXTURE: 2 of 3 images missing alt → image_alt: warning -->
+<html lang="tr">
+<head><meta charset="utf-8"><title>Alt Eksik Görsel Sayfası Test</title></head>
+<body>
+  <h1>Görsel Alt Testi</h1>
+  <img src="/images/hero.webp" alt="Var olan alt text" width="800" height="400">
+  <img src="/images/icon.webp" alt="" width="32" height="32">   <!-- empty alt = missing -->
+  <img src="/images/banner.webp" width="1200" height="300">     <!-- no alt at all -->
+  <p>İkinci ve üçüncü görselde alt attribute eksik.</p>
+</body>
+</html>
